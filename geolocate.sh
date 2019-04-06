@@ -21,8 +21,44 @@ __file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
 __base="$(basename ${__file} .sh)"
 __root="$(cd "$(dirname "${__dir}")" && pwd)" 
 
-# Get API key
-source mapquest.key
+# DESC: Initialise color variables
+# ARGS: None
+function echo_color_init(){
+
+    Color_Off='\033[0m'       # Text Reset
+    NC='\e[m'                 # Color Reset
+
+    # Regular Colors
+    Black='\033[0;30m'        # Black
+    Red='\033[0;31m'          # Red
+    Green='\033[0;32m'        # Green
+    Yellow='\033[0;33m'       # Yellow
+    Blue='\033[0;34m'         # Blue
+    Purple='\033[0;35m'       # Purple
+    Cyan='\033[0;36m'         # Cyan
+    White='\033[0;37m'        # White
+
+    # Bold
+    BBlack='\033[1;30m'       # Black
+    BRed='\033[1;31m'         # Red
+    BGreen='\033[1;32m'       # Green
+    BYellow='\033[1;33m'      # Yellow
+    BBlue='\033[1;34m'        # Blue
+    BPurple='\033[1;35m'      # Purple
+    BCyan='\033[1;36m'        # Cyan
+    BWhite='\033[1;37m'       # White
+
+    # High Intensity
+    IBlack='\033[0;90m'       # Black
+    IRed='\033[0;91m'         # Red
+    IGreen='\033[0;92m'       # Green
+    IYellow='\033[0;93m'      # Yellow
+    IBlue='\033[0;94m'        # Blue
+    IPurple='\033[0;95m'      # Purple
+    ICyan='\033[0;96m'        # Cyan
+    IWhite='\033[0;97m'       # White
+
+}
 
 # DESC: Generic script initialisation
 # ARGS: None
@@ -52,6 +88,28 @@ function usage() {
     \r-h|--help\t\tShow this help message and exit.
     \r-u|--url\t\tPrint URL for MapQuest. 
     "
+}
+
+# DESC: Gets if API key is set.
+# ARGS: $@ (required): API key regex varible.
+function check_api_key(){
+
+    api_key="${1}"
+    
+    # Validate API key regex.
+    if [[ "$api_key" =~ ^[0-9a-zA-Z]{32}$ ]]
+    then
+        return 0
+    else
+        # Print line number to check variable.
+        variable_line_num=$(grep -n "api_key=" ${__file} | \
+            cut -d ':' -f 1 | head -n 1)
+        echo -e "Please validate ${Red}API Key${Color_Off}: ${api_key}
+                \rReview ${__file} ${IYellow}line number${Color_Off}:" \
+                " ${variable_line_num}"
+
+        exit 0
+    fi
 }
 
 # DESC: Print Location info.
@@ -99,7 +157,6 @@ function parse_params() {
     local param
     while [[ $# -gt 0 ]]; do
         params=$(echo ${1})
-
         shift
         # Iterate through all the parameters.
         for param in $(echo ${params})
@@ -141,6 +198,7 @@ function main() {
 
     script_init
     #colour_init
+    echo_color_init
 
     # Print usage if no parameters are entered.
     if [ $# -eq 0 ]
@@ -157,9 +215,22 @@ function main() {
     parse_params "${sorted_params}"
 
     query=$( echo ${get_params} | tr ' ' '\n' | grep -v '-') 
-	api='https://www.mapquestapi.com/geocoding/v1/address?key='
+
+    # Get API key
+    apiKey=""
+
+    # Sourcing the api key to keep it private.
+    if [ -z "${apiKey}" ]
+    then
+        source "${__dir}/mapquest.key"
+    fi
+
+    # Check API key.
+    check_api_key "${apiKey}"
+
+    api='https://www.mapquestapi.com/geocoding/v1/address?key='
 	args='&location='
-	converter="${api}${key}${args}"
+	converter="${api}${apiKey}${args}"
 	addr="$(echo $* | sed 's/ /+/g')" 
 
 	resp=$(curl -s "${converter}${addr}") 
