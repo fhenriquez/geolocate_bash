@@ -10,16 +10,16 @@
 #                                                                       #
 #########################################################################
 
-set -o errexit
-#set -o pipefail
+#set -o errexit
+set -o pipefail
 set -o nounset
-# set -o xtrace
+set -o xtrace
 
 # Set magic variables for current file & dir
 __dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 __file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
 __base="$(basename ${__file} .sh)"
-__root="$(cd "$(dirname "${__dir}")" && pwd)" # <-- change this as it depends on your app
+__root="$(cd "$(dirname "${__dir}")" && pwd)" 
 
 # Get API key
 source mapquest.key
@@ -61,8 +61,6 @@ function print_location_info(){
 
 	info=$1
 
-	#info=$(echo ${query} | jq -r '.results[0].locations[0] | {adminArea5, adminArea3, adminArea1}[], .latLng[]')
-
 	# Setting up Location variables
 	CITY=$(echo ${info} | jq -r '.results[0].locations[0] | .adminArea5')
 	STATE=$(echo ${info} | jq -r '.results[0].locations[0] | .adminArea3')
@@ -100,11 +98,8 @@ function print_location_info(){
 function parse_params() {
     local param
     while [[ $# -gt 0 ]]; do
-        #param="${1}"
         params=$(echo ${1})
 
-        # Getting the last parameter which should be the news_id.
-        news_id=$(echo $params | awk 'NF>1{print $NF}')
         shift
         # Iterate through all the parameters.
         for param in $(echo ${params})
@@ -120,9 +115,10 @@ function parse_params() {
                -u|--url)
                     mapurl=1
                     ;;
-                --*)
+                -*)
                     usage
-                    echo -e "${IYellow}Invalid Parameter${Color_Off}: ${IRed}${param}${Color_Off}"
+                    echo -e "${IYellow}Invalid Parameter${Color_Off}:"
+                    "\r ${IRed}${param}${Color_Off}"
                     exit 0
                     ;;
                 *)
@@ -157,10 +153,10 @@ function main() {
 	coordinates=0
 
 	get_params="$@"
-    query=$( echo ${get_params} | tr ' ' '\n' | grep -v '-') 
     sorted_params=$( echo ${get_params} | tr ' ' '\n' | grep '-' | sort | tr '\n' ' ' | sed 's/ *$//')
     parse_params "${sorted_params}"
 
+    query=$( echo ${get_params} | tr ' ' '\n' | grep -v '-') 
 	api='https://www.mapquestapi.com/geocoding/v1/address?key='
 	args='&location='
 	converter="${api}${key}${args}"
