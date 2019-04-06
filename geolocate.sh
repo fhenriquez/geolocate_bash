@@ -6,7 +6,7 @@
 # Last Modified: 05Apr2019                                              #
 # Description:	Gets location information from mapquest API.			#
 #                                                                       #
-# Version: 0.1.0                                                        #
+# Version: 1.0.5                                                        #
 #                                                                       #
 #########################################################################
 
@@ -174,8 +174,8 @@ function parse_params() {
                     ;;
                 -*)
                     usage
-                    echo -e "${IYellow}Invalid Parameter${Color_Off}:"
-                    "\r ${IRed}${param}${Color_Off}"
+                    echo -e "${IYellow}Invalid Parameter${Color_Off}:" \
+                    "${IRed}${param}${Color_Off}"
                     exit 0
                     ;;
                 *)
