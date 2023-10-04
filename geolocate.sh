@@ -12,6 +12,8 @@
 # Required binaries:
 # - GNU bash 3+
 # - getopt
+# - jq
+# - curl
 
 # Notes:
 #
@@ -121,7 +123,7 @@ function ctrl_c() {
 function usage() {
     echo -e "
     \rUsage: ${__base} \"location\" [options]
-    \rDescription:\t\t\t\t Gathers location information given a named location or zipcode.
+    \rDescription:\t\t\t\t Gathers location information given a named location or zip code.
 
     \rrequired arguments:
     \r<location>\t\t\t\t Location name.
@@ -225,12 +227,79 @@ function parse_args(){
     return 0
 }
 
+
+# DESC: Gets if API key is set.
+# ARGS: $@ (required): API key regex variable.
+function check_api_key(){
+
+    api_key="${1}"
+
+    # Validate API key regex.
+    if [[ "$api_key" =~ ^[0-9a-zA-Z]{32}$ ]]
+    then
+        debug "The API Key is valid"
+        return 0
+    else
+        # Print line number to check variable.
+        variable_line_num=$(grep -n "api_key=" ${__file} | \
+            cut -d ':' -f 1 | head -n 1)
+        echo -e "Please validate ${Red}API Key${Color_Off}: ${api_key}
+                \rReview ${__file} ${IYellow}line number${Color_Off}:" \
+                " ${variable_line_num}"
+
+        exit 0
+    fi
+}
+
+
+# DESC: Print Location info.
+# ARGS: $1 (required): Array of location info as json.
+#       $2 (optional): Exit code (defaults to 0)
+function print_location_info(){
+
+	info=$1
+
+	# Setting up Location variables
+	CITY=$(echo ${info} | jq -r '.results[0].locations[0] | .adminArea5')
+	STATE=$(echo ${info} | jq -r '.results[0].locations[0] | .adminArea3')
+	COUNTRY=$(echo ${info} | jq -r '.results[0].locations[0] | .adminArea1')
+	#ZIPCODE=${info_arr[3]}
+	LATITUDE=$(echo ${info} | jq -r '.results[0].locations[0] | .latLng.lat')
+	LONGITUDE=$(echo ${info} | jq -r '.results[0].locations[0] | .latLng.lng')
+	MAPURL=$(echo ${info} | jq -r '.results[0].locations[0] | .mapUrl')
+
+	# Print
+	if [[ ${coordinates} -eq 1 ]]
+	then
+		echo -e "\
+			\rLatitude: \t${LATITUDE}
+			\rLongitude: \t${LONGITUDE}"
+	elif [[ ${mapurl} -eq 1 ]]
+	then
+		echo -e "\
+			\rMapUrl: ${MAPURL}"
+	else
+		echo -e "\
+			\rThe location of ${addr} is:
+			\rCity: \t\t${CITY}
+			\rState: \t\t${STATE}
+			\rCountry: \t${COUNTRY}
+			\rLatitude: \t${LATITUDE}
+			\rLongitude: \t${LONGITUDE}
+			\rMapUrl: \t${MAPURL}"
+	fi
+	return 0
+}
+
+
 # DESC: main
 # ARGS: None
 function main(){
 
     debug="false"
     verbose="false"
+    mapurl=0
+    coordinates=0
 
     echo_color_init
     parse_args "$@"
@@ -245,23 +314,6 @@ function main(){
     IFS=' ' read -r -a pos_args <<< "${POSITIONAL_ARGS[@]}"
     IFS=${OLD_IFS}
 
-    pos_arg_count=0
-    len=${#pos_args[@]}
-    if [[ ${len} == 0 ]]
-    then
-        debug "No location was passed."
-        usage
-        exit 1
-    else
-        while [ $pos_arg_count -lt $len ];
-        do
-            echo ${pos_args[$pos_arg_count]}
-            pos_arg_count=$((${pos_arg_count}+1))
-        done
-    fi
-
-    exit 0
-    # Main
     # Run in debug mode, if set
     if [ "${debug}" == "true" ]; then
         set -o noclobber
@@ -272,9 +324,54 @@ function main(){
         set -o xtrace           # Trace the execution of the script (debug)
     fi
 
+    # Validating if file is writable
     if [ ! -z "${outfile:-}" ]; then
         debug "Testing destination location for write access"
         touch ${outfile}
+    fi
+
+    # Get API key
+    apiKey=""
+
+    # Sourcing the api key to keep it private.
+    if [ -z "${apiKey}" ]
+    then
+        debug "Grabbing API Key from file"
+        source "${__dir}/mapquest.key"
+    fi
+
+    # Check API key.
+    check_api_key "${apiKey}"
+
+    # Main
+
+    api='https://www.mapquestapi.com/geocoding/v1/address?key='
+    args='&location='
+	query="${api}${apiKey}"
+
+    # Positional parameters are validated here.
+    pos_arg_count=0
+    len=${#pos_args[@]}
+    if [[ ${len} == 0 ]]
+    then
+        debug "No location was passed."
+        usage
+        exit 1
+    else
+        while [ $pos_arg_count -lt $len ];
+        do
+            debug "${pos_args[$pos_arg_count]}"
+            location="${pos_args[$pos_arg_count]}"
+
+            location=$(echo ${location} | tr -d "'")
+            # If there is a comma, convert to URL friendly format
+	        addr="$(echo ${location} | sed 's/ /+/g')"
+
+            resp=$(curl -s "${query}${args}${addr}")
+
+            print_location_info "${resp}"
+            pos_arg_count=$((${pos_arg_count}+1))
+        done
     fi
 
 }
