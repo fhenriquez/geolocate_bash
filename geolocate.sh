@@ -132,8 +132,7 @@ function usage() {
     \r-c|--coordinates\t\t\t Only print coordinates Lat and Lng.
     \r-h|--help\t\t\t\t Show this help message and exit.
     \r-l, --log <file>\t\t\t Log file.
-    \r-o|--outfile </path/to/outfile> \t CSV outfile.
-    \r-u|--url\t\t\t\t Print URL for MapQuest.
+    \r-u|--url\t\t\t\t Print URL for MapQuest (no longer provided by api).
     \r-v, --verbose\t\t\t\t Verbosity.
     \r             \t\t\t\t\t -v info
     \r             \t\t\t\t\t -vv debug
@@ -145,8 +144,8 @@ function usage() {
 # ARGS: main args
 function parse_args(){
 
-    local short_opts='c,h,l:,o:,u,v'
-    local long_opts='coordinates,help,log:,outfile:,url,verbose'
+    local short_opts='c,h,l:,u,v'
+    local long_opts='coordinates,help,log:,url,verbose'
 
     #set -x
     # -use ! and PIPESTATUS to get exit code with errexit set
@@ -193,10 +192,6 @@ function parse_args(){
             -l | --log)
                 LOG_FILE="$2"
                 log_file="${LOG_FILE/.log/}"_"$(date +%d%b%Y)".log
-                shift 2
-                ;;
-            -o | --outfile)
-                outfile="$2"
                 shift 2
                 ;;
             -u|--url)
@@ -274,8 +269,9 @@ function print_location_info(){
 	if [[ ${coordinates} -eq 1 ]]
 	then
 		echo "\
-			\rLatitude: \t${LATITUDE}
-			\rLongitude: \t${LONGITUDE}"
+			\rThe coordinates of ${addr} are:
+			\nLatitude: \t${LATITUDE}
+			\nLongitude: \t${LONGITUDE}"
 	elif [[ ${mapurl} -eq 1 ]]
 	then
 		echo "\
