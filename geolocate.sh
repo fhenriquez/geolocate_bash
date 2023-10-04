@@ -273,22 +273,22 @@ function print_location_info(){
 	# Print
 	if [[ ${coordinates} -eq 1 ]]
 	then
-		echo -e "\
+		echo "\
 			\rLatitude: \t${LATITUDE}
 			\rLongitude: \t${LONGITUDE}"
 	elif [[ ${mapurl} -eq 1 ]]
 	then
-		echo -e "\
+		echo "\
 			\rMapUrl: ${MAPURL}"
 	else
-		echo -e "\
+		echo "\
 			\rThe location of ${addr} is:
-			\rCity: \t\t${CITY}
-			\rState: \t\t${STATE}
-			\rCountry: \t${COUNTRY}
-			\rLatitude: \t${LATITUDE}
-			\rLongitude: \t${LONGITUDE}
-			\rMapUrl: \t${MAPURL}"
+			\nCity: \t\t${CITY}
+			\nState: \t\t${STATE}
+			\nCountry: \t${COUNTRY}
+			\nLatitude: \t${LATITUDE}
+			\nLongitude: \t${LONGITUDE}
+			\nMapUrl: \t${MAPURL}"
 	fi
 	return 0
 }
@@ -347,6 +347,8 @@ function main(){
 
     # Main
 
+    declare -a result
+
     api='https://www.mapquestapi.com/geocoding/v1/address?key='
     args='&location='
 	query="${api}${apiKey}"
@@ -371,11 +373,14 @@ function main(){
 
             resp=$(curl -s "${query}${args}${addr}")
 
-            print_location_info "${resp}"
+            result+=$(print_location_info "${resp}")
+            # Adding empty item in array for formatting output
+            result+="\n\n"
             pos_arg_count=$((${pos_arg_count}+1))
         done
     fi
 
+    echo -e ${result[@]}
 }
 
 # make it rain
