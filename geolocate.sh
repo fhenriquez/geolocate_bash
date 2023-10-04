@@ -183,6 +183,7 @@ function parse_args(){
         case "$1" in
             -c|--coordinates)
                  coordinates=1
+                 shift
                  ;;
             -h | --help )
                  # Display usage.
@@ -200,6 +201,7 @@ function parse_args(){
                 ;;
             -u|--url)
                  mapurl=1
+                 shift
                  ;;
             -v | --verbose)
                (( verbosity = verbosity + 1 ))
