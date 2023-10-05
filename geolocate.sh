@@ -131,13 +131,13 @@ function usage() {
     \roptional arguments:
     \r-c|--coordinates\t\t\t Only print coordinates Lat and Lng.
     \r-h|--help\t\t\t\t Show this help message and exit.
-    \r-l, --log <file>\t\t\t Log file.
     \r-u|--url\t\t\t\t Print URL for MapQuest (no longer provided by api).
     \r-v, --verbose\t\t\t\t Verbosity.
     \r             \t\t\t\t\t -v info
     \r             \t\t\t\t\t -vv debug
     \r             \t\t\t\t\t -vv bash debug
     "
+    local tmp="\r-l, --log <file>\t\t\t Log file."
 }
 
 # DESC: Parse arguments
@@ -268,15 +268,18 @@ function print_location_info(){
 	# Print
 	if [[ ${coordinates} -eq 1 ]]
 	then
+        debug "Coordinates"
 		echo "\
 			\rThe coordinates of ${addr} are:
 			\nLatitude: \t${LATITUDE}
 			\nLongitude: \t${LONGITUDE}"
 	elif [[ ${mapurl} -eq 1 ]]
 	then
+        debug "Functionality is deprecated"
 		echo "\
 			\rMapUrl: ${MAPURL}"
 	else
+        debug "Printing verbose info"
 		echo "\
 			\rThe location of ${addr} is:
 			\nCity: \t\t${CITY}
@@ -360,7 +363,7 @@ function main(){
     else
         while [ $pos_arg_count -lt $len ];
         do
-            debug "${pos_args[$pos_arg_count]}"
+            debug "Fetching locations for ${pos_args[$pos_arg_count]}"
             location="${pos_args[$pos_arg_count]}"
 
             location=$(echo ${location} | tr -d "'")
