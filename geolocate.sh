@@ -14,6 +14,7 @@
 # - getopt
 # - jq
 # - curl
+# - sed
 
 # Notes:
 #
