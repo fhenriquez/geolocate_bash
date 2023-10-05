@@ -3,25 +3,36 @@
 # Name: Franklin Henriquez                                              #
 # Author: Franklin Henriquez (franklin.a.henriquez@gmail.com)           #
 # Creation Date: 04Apr2019                                              #
-# Last Modified: 05Apr2019                                              #
+# Last Modified: 03Oct2023                                              #
 # Description:	Gets location information from mapquest API.			#
 #                                                                       #
 # Version: 1.0.5                                                        #
 #                                                                       #
 #########################################################################
+# Required binaries:
+# - GNU bash 3+
+# - getopt
+# - jq
+# - curl
+# - sed
 
-#set -o errexit
-set -o pipefail
-set -o nounset
-set -o xtrace
+# Notes:
+#
+#
+__version__="0.1.0"
+__author__="Franklin Henriquez"
+__email__="franklin.a.henriquez@gmail.com"
 
 # Set magic variables for current file & dir
 __dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 __file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
 __base="$(basename ${__file} .sh)"
-__root="$(cd "$(dirname "${__dir}")" && pwd)" 
+__root="$(cd "$(dirname "${__dir}")" && pwd)"
 
-# DESC: Initialise color variables
+# Script Config Vars
+
+# Color Codes
+# DESC: Initialize color variables
 # ARGS: None
 function echo_color_init(){
 
@@ -60,17 +71,52 @@ function echo_color_init(){
 
 }
 
-# DESC: Generic script initialisation
-# ARGS: None
-function script_init() {
-    # Useful paths
-    readonly orig_cwd="$PWD"
-    readonly script_path="${BASH_SOURCE[0]}"
-    readonly script_dir="$(dirname "$script_path")"
-    readonly script_name="$(basename "$script_path")"
+# Setting up logging
+exec 3>&2 # logging stream (file descriptor 3) defaults to STDERR
+verbosity=3 # default to show warnings
+silent_lvl=0
+crt_lvl=1
+err_lvl=2
+wrn_lvl=3
+inf_lvl=4
+dbg_lvl=5
+bash_dbg_lvl=6
 
-    # Important to always set as we use it in the exit handler
-    readonly ta_none="$(tput sgr0 || true)"
+notify() { log $silent_lvl "${Cyan}NOTE${Color_Off}: $1"; } # Always prints
+critical() { log $crt_lvl "${IRed}CRITICAL:${Color_Off} $1"; }
+error() { log $err_lvl "${Red}ERROR:${Color_Off} $1"; }
+warn() { log $wrn_lvl "${Yellow}WARNING:${Color_Off} $1"; }
+info() { log $inf_lvl "${Blue}INFO:${Color_Off} $1"; } # "info" is already a command
+debug() { log $dbg_lvl "${Purple}DEBUG:${Color_Off} $1"; }
+log() {
+    if [ "${verbosity}" -ge "${1}" ]; then
+        datestring=$(date +'%Y-%m-%d %H:%M:%S')
+        # Expand escaped characters, wrap at 70 chars, indent wrapped lines
+        echo -e "$datestring - __${FUNCNAME[2]}__  - $2" >&3 #| fold -w70 -s | sed '2~1s/^/  /' >&3
+    fi
+}
+
+
+logger() {
+    if [ -n "${LOG_FILE}" ]
+    then
+        echo -e "$1" >> "${log_file}"
+        #echo -e "$1" >> "${LOG_FILE/.log/}"_"$(date +%d%b%Y)".log
+    fi
+}
+
+# DESC: What happens when ctrl-c is pressed
+# ARGS: None
+# Trap ctrl-c and call ctrl_c()
+trap ctrl_c INT
+
+
+function ctrl_c() {
+    info "Trapped CTRL-C signal, terminating script"
+    log "\n================== $(date +'%Y-%m-%d %H:%M:%S'): Run Interrupted  ==================\n"
+    # Any clean up action here
+    # rm -f ${TEMP_FILE}
+    exit 2
 }
 
 # DESC: Usage help
@@ -78,27 +124,118 @@ function script_init() {
 function usage() {
     echo -e "
     \rUsage: ${__base} \"location\" [options]
-    \rDescription:\t Gathers location information given a named location.
+    \rDescription:\t\t\t\t Gathers location information given a named location or zip code.
 
     \rrequired arguments:
-    \r<location>\tLocation name.
+    \r<location>\t\t\t\t Location name.
 
     \roptional arguments:
-    \r-c|--coordinates\tOnly print coordinates Lat and Lng.
-    \r-h|--help\t\tShow this help message and exit.
-    \r-u|--url\t\tPrint URL for MapQuest. 
+    \r-c|--coordinates\t\t\t Only print coordinates Lat and Lng.
+    \r-h|--help\t\t\t\t Show this help message and exit.
+    \r-u|--url\t\t\t\t Print URL for MapQuest (no longer provided by api).
+    \r-v, --verbose\t\t\t\t Verbosity.
+    \r             \t\t\t\t\t -v info
+    \r             \t\t\t\t\t -vv debug
+    \r             \t\t\t\t\t -vv bash debug
     "
+    local tmp="\r-l, --log <file>\t\t\t Log file."
 }
 
+# DESC: Parse arguments
+# ARGS: main args
+function parse_args(){
+
+    local short_opts='c,h,l:,u,v'
+    local long_opts='coordinates,help,log:,url,verbose'
+
+    #set -x
+    # -use ! and PIPESTATUS to get exit code with errexit set
+    # -temporarily store output to be able to check for errors
+    # -activate quoting/enhanced mode (e.g. by writing out “--options”)
+    # -pass arguments only via   -- "$@"   to separate them correctly
+    ! PARSED=$(getopt --options=${short_opts} --longoptions=${long_opts} --name "$0" -- "$@")
+    if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+        # e.g. return value is 1
+        #  then getopt has complained about wrong arguments to stdout
+        debug "getopt has complained about wrong arguments"
+        exit 2
+    fi
+
+    # read getopt’s output this way to handle the quoting right:
+    eval set -- "$PARSED"
+
+    if [[ "${PARSED}" == " --" ]]
+    then
+        debug "No arguments were passed"
+        usage
+        exit 1
+    fi
+
+    # Getting positional args
+    OLD_IFS=$IFS
+    POSITIONAL_ARGS=${PARSED#*"--"}
+    IFS=' ' read -r -a positional_args <<< "${POSITIONAL_ARGS}"
+
+    IFS=$OLD_IFS
+
+    # extract options and their arguments into variables.
+    while true ; do
+        case "$1" in
+            -c|--coordinates)
+                 coordinates=1
+                 shift
+                 ;;
+            -h | --help )
+                 # Display usage.
+                 usage
+                 exit 1;
+                 ;;
+            -l | --log)
+                LOG_FILE="$2"
+                log_file="${LOG_FILE/.log/}"_"$(date +%d%b%Y)".log
+                shift 2
+                ;;
+            -u|--url)
+                 mapurl=1
+                 shift
+                 ;;
+            -v | --verbose)
+               (( verbosity = verbosity + 1 ))
+               if [ $verbosity -eq $bash_dbg_lvl ]
+               then
+                   debug="true"
+               fi
+               shift
+               ;;
+            -- )
+               shift
+               break ;;
+            -*)
+                usage
+                echo -e "${IYellow}Invalid Parameter${Color_Off}:" \
+                "${IRed}${param}${Color_Off}"
+                exit 0
+                ;;
+            * )
+                usage
+                exit 3
+        esac
+    done
+
+    return 0
+}
+
+
 # DESC: Gets if API key is set.
-# ARGS: $@ (required): API key regex varible.
+# ARGS: $@ (required): API key regex variable.
 function check_api_key(){
 
     api_key="${1}"
-    
+
     # Validate API key regex.
     if [[ "$api_key" =~ ^[0-9a-zA-Z]{32}$ ]]
     then
+        debug "The API Key is valid"
         return 0
     else
         # Print line number to check variable.
@@ -112,8 +249,9 @@ function check_api_key(){
     fi
 }
 
+
 # DESC: Print Location info.
-# ARGS: $1 (required): Array of location info as json. 
+# ARGS: $1 (required): Array of location info as json.
 #       $2 (optional): Exit code (defaults to 0)
 function print_location_info(){
 
@@ -128,93 +266,71 @@ function print_location_info(){
 	LONGITUDE=$(echo ${info} | jq -r '.results[0].locations[0] | .latLng.lng')
 	MAPURL=$(echo ${info} | jq -r '.results[0].locations[0] | .mapUrl')
 
-	# Print 
+	# Print
 	if [[ ${coordinates} -eq 1 ]]
 	then
-		echo -e "\
-			\rLatitude: \t${LATITUDE}
-			\rLongitude: \t${LONGITUDE}"
+        debug "Coordinates"
+		echo "\
+			\rThe coordinates of ${addr} are:
+			\nLatitude: \t${LATITUDE}
+			\nLongitude: \t${LONGITUDE}"
 	elif [[ ${mapurl} -eq 1 ]]
 	then
-		echo -e "\
+        debug "Functionality is deprecated"
+		echo "\
 			\rMapUrl: ${MAPURL}"
 	else
-		echo -e "\
+        debug "Printing verbose info"
+		echo "\
 			\rThe location of ${addr} is:
-			\rCity: \t\t${CITY}
-			\rState: \t\t${STATE}
-			\rCountry: \t${COUNTRY}
-			\rLatitude: \t${LATITUDE}
-			\rLongitude: \t${LONGITUDE}
-			\rMapUrl: \t${MAPURL}"
+			\nCity: \t\t${CITY}
+			\nState: \t\t${STATE}
+			\nCountry: \t${COUNTRY}
+			\nLatitude: \t${LATITUDE}
+			\nLongitude: \t${LONGITUDE}
+			\nMapUrl: \t${MAPURL}"
 	fi
 	return 0
 }
 
-# DESC: Parameter parser
-# ARGS: $@ (optional): Arguments provided to the script
-function parse_params() {
-    local param
-    while [[ $# -gt 0 ]]; do
-        params=$(echo ${1})
-        shift
-        # Iterate through all the parameters.
-        for param in $(echo ${params})
-        do
-            case $param in
-                -c|--coordinates)
-                    coordinates=1
-                    ;;
-               -h|--help)
-                    usage
-                    exit 0
-                    ;;
-               -u|--url)
-                    mapurl=1
-                    ;;
-                -*)
-                    usage
-                    echo -e "${IYellow}Invalid Parameter${Color_Off}:" \
-                    "${IRed}${param}${Color_Off}"
-                    exit 0
-                    ;;
-                *)
-					usage
-                    exit 0
-                    ;;
-                esac
-        done
-    done
-}
 
-# DESC: Main control flow
-# ARGS: $@ (optional): Arguments provided to the script
-function main() {
-    # shellcheck source=source.sh
-    #source "$(dirname "${BASH_SOURCE[0]}")/bash_color_codes"
+# DESC: main
+# ARGS: None
+function main(){
 
-    #trap "script_trap_err" ERR
-    #trap "script_trap_exit" EXIT
+    debug="false"
+    verbose="false"
+    mapurl=0
+    coordinates=0
 
-    script_init
-    #colour_init
     echo_color_init
+    parse_args "$@"
 
-    # Print usage if no parameters are entered.
-    if [ $# -eq 0 ]
-    then
-        usage
-        exit 2
+    debug "Starting script"
+    debug "
+    out_file:        \t ${outfile}
+    "
+
+    # Getting from parse_args
+    OLD_IFS=$IFS
+    IFS=' ' read -r -a pos_args <<< "${POSITIONAL_ARGS[@]}"
+    IFS=${OLD_IFS}
+
+    # Run in debug mode, if set
+    if [ "${debug}" == "true" ]; then
+        set -o noclobber
+        set -o errexit          # Exit on most errors (see the manual)
+        set -o errtrace         # Make sure any error trap is inherited
+        set -o nounset          # Disallow expansion of unset variables
+        set -o pipefail         # Use last non-zero exit code in a pipeline
+        set -o xtrace           # Trace the execution of the script (debug)
     fi
-	
-	mapurl=0
-	coordinates=0
 
-	get_params="$@"
-    sorted_params=$( echo ${get_params} | tr ' ' '\n' | grep '-' | sort | tr '\n' ' ' | sed 's/ *$//')
-    parse_params "${sorted_params}"
-
-    query=$( echo ${get_params} | tr ' ' '\n' | grep -v '-') 
+    # Validating if file is writable
+    if [ ! -z "${outfile:-}" ]; then
+        debug "Testing destination location for write access"
+        touch ${outfile}
+    fi
 
     # Get API key
     apiKey=""
@@ -222,22 +338,52 @@ function main() {
     # Sourcing the api key to keep it private.
     if [ -z "${apiKey}" ]
     then
+        debug "Grabbing API Key from file"
         source "${__dir}/mapquest.key"
     fi
 
     # Check API key.
     check_api_key "${apiKey}"
 
-    api='https://www.mapquestapi.com/geocoding/v1/address?key='
-	args='&location='
-	converter="${api}${apiKey}${args}"
-	addr="$(echo $* | sed 's/ /+/g')" 
+    # Main
 
-	resp=$(curl -s "${converter}${addr}") 
-	
-	print_location_info "${resp}"
-	exit 0
+    declare -a result
+
+    api='https://www.mapquestapi.com/geocoding/v1/address?key='
+    args='&location='
+	query="${api}${apiKey}"
+
+    # Positional parameters are validated here.
+    pos_arg_count=0
+    len=${#pos_args[@]}
+    if [[ ${len} == 0 ]]
+    then
+        debug "No location was passed."
+        usage
+        exit 1
+    else
+        while [ $pos_arg_count -lt $len ];
+        do
+            debug "Fetching locations for ${pos_args[$pos_arg_count]}"
+            location="${pos_args[$pos_arg_count]}"
+
+            location=$(echo ${location} | tr -d "'")
+            # If there is a comma, convert to URL friendly format
+	        addr="$(echo ${location} | sed 's/ /+/g')"
+
+            resp=$(curl -s "${query}${args}${addr}")
+
+            result+=$(print_location_info "${resp}")
+            # Adding empty item in array for formatting output
+            result+="\n\n"
+            pos_arg_count=$((${pos_arg_count}+1))
+        done
+    fi
+
+    echo -e ${result[@]}
 }
 
-# Start main function
+# make it rain
 main "$@"
+debug "Script is complete"
+exit 0
